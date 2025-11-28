@@ -2,7 +2,7 @@
 REM Build script for Space Game
 
 SET ML64=ml64
-SET LINK=link
+SET LINKER=link
 
 REM Assemble all source files
 @echo on
@@ -24,7 +24,8 @@ if errorlevel 1 goto error
 
 @REM Link all object files
 @echo Linking...
-%LINK% /SUBSYSTEM:EFI_APPLICATION /ENTRY:EFI_MAIN ^
+set LINK=
+%LINKER% /SUBSYSTEM:EFI_APPLICATION /ENTRY:EFI_MAIN  /MACHINE:X64 ^
     obj\data.obj obj\callbacks.obj obj\parallel.obj obj\main.obj ^
     /OUT:SpaceGame.efi
 
@@ -35,6 +36,6 @@ goto end
 
 :error
 @echo Build failed!
-exit /b 1
+@exit /b 1
 
 :end
