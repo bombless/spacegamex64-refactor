@@ -1,0 +1,85 @@
+; CALLBACKS.ASM - Key notification callback procedures
+; Assemble: ml64 /c callbacks.asm
+
+INCLUDE .\include\structs.inc
+INCLUDE .\include\externs.inc
+
+.CODE
+
+PUBLIC KeyNotificationCallbackFunctionUp
+PUBLIC KeyNotificationCallbackFunctionDown
+PUBLIC KeyNotificationCallbackFunctionLeft
+PUBLIC KeyNotificationCallbackFunctionRight
+PUBLIC KeyNotificationCallbackFunctionFire
+
+KeyNotificationCallbackFunctionUp PROC
+    XOR RAX, RAX
+    MOV AL, BYTE PTR [KEYTIMERUP]
+    CMP AL, 00H
+    JZ SETFIRSTTIMERA
+        MOV BYTE PTR [KEYTIMERUP], SECONDKEYTIMELIMIT
+    JMP EXITA
+SETFIRSTTIMERA:
+    MOV BYTE PTR [KEYTIMERUP], FIRSTKEYTIMELIMIT
+    MOV BYTE PTR [PRESSEDUP], 01H
+EXITA:
+    RET
+KeyNotificationCallbackFunctionUp ENDP
+
+KeyNotificationCallbackFunctionDown PROC
+    XOR RAX, RAX
+    MOV AL, BYTE PTR [KEYTIMERDOWN]
+    CMP AL, 00H
+    JZ SETFIRSTTIMERB
+        MOV BYTE PTR [KEYTIMERDOWN], SECONDKEYTIMELIMIT
+    JMP EXITB
+SETFIRSTTIMERB:
+    MOV BYTE PTR [KEYTIMERDOWN], FIRSTKEYTIMELIMIT
+    MOV BYTE PTR [PRESSEDDOWN], 01H
+EXITB:
+    RET
+KeyNotificationCallbackFunctionDown ENDP
+
+KeyNotificationCallbackFunctionLeft PROC
+    XOR RAX, RAX
+    MOV AL, BYTE PTR [KEYTIMERLEFT]
+    CMP AL, 00H
+    JZ SETFIRSTTIMERC
+        MOV BYTE PTR [KEYTIMERLEFT], SECONDKEYTIMELIMIT
+    JMP EXITC
+SETFIRSTTIMERC:
+    MOV BYTE PTR [KEYTIMERLEFT], FIRSTKEYTIMELIMIT
+    MOV BYTE PTR [PRESSEDLEFT], 01H
+EXITC:
+    RET
+KeyNotificationCallbackFunctionLeft ENDP
+
+KeyNotificationCallbackFunctionRight PROC
+    XOR RAX, RAX
+    MOV AL, BYTE PTR [KEYTIMERRIGHT]
+    CMP AL, 00H
+    JZ SETFIRSTTIMERD
+        MOV BYTE PTR [KEYTIMERRIGHT], SECONDKEYTIMELIMIT
+    JMP EXITD
+SETFIRSTTIMERD:
+    MOV BYTE PTR [KEYTIMERRIGHT], FIRSTKEYTIMELIMIT
+    MOV BYTE PTR [PRESSEDRIGHT], 01H
+EXITD:
+    RET
+KeyNotificationCallbackFunctionRight ENDP
+
+KeyNotificationCallbackFunctionFire PROC
+    XOR RAX, RAX
+    MOV AL, BYTE PTR [KEYTIMERFIRE]
+    CMP AL, 00H
+    JZ SETFIRSTTIMERE
+        MOV BYTE PTR [KEYTIMERFIRE], SECONDKEYTIMELIMIT
+    JMP EXITE
+SETFIRSTTIMERE:
+    MOV BYTE PTR [KEYTIMERFIRE], FIRSTKEYTIMELIMIT
+    MOV BYTE PTR [PRESSEDFIRE], 01H
+EXITE:
+    RET
+KeyNotificationCallbackFunctionFire ENDP
+
+END
