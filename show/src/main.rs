@@ -3,16 +3,13 @@ use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. 把 loadImg.inc 解析成 Vec<u8>
-    let content = fs::read_to_string("../graphics/loadImg.inc")?;
+    let content = fs::read_to_string("../graphics/dollar.inc")?;
     let mut result = Vec::new();
     let mut limit = 100_000000;
 
     for line in content.lines() {
         if limit == 0 { break; }
-        let after_db = match line.strip_prefix("db ") {
-            Some(s) => s,
-            None => continue,
-        };
+        let after_db = line.split("db ").nth(1).unwrap_or("");
         for item in after_db.split(',') {
             let trimmed = item.trim();
             if trimmed.len() >= 4 {
@@ -25,15 +22,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         limit -= 1;
     }
-    let block_size = 1280 * 1000 * 3;
+    println!("{}", result.len());
+    let block_size = 128 * 64 * 3;
 
     // 2. 取 rgb 数据
     let mut rgb = Vec::with_capacity(block_size);
+
+    let width = 100;
     
-    for i in 0 .. 1000 {
-        let i = 999 - i;
-        for j in 0 .. 1280 {
-            let offset = i * 1280 * 4 + j * 4;
+    for i in 0 .. 100 {
+        let i = 99 - i;
+        for j in 0 .. width {
+            let offset = i * width * 4 + j * 4;
             rgb.extend_from_slice(&[result[offset + 2], result[offset + 1], result[offset]]);
         }
     }
@@ -42,15 +42,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = glium::glutin::event_loop::EventLoop::new();
     let wb = glium::glutin::window::WindowBuilder::new()
                 .with_title("inc 图片")
-                .with_inner_size(glium::glutin::dpi::LogicalSize::new(1024, 800));
+                .with_inner_size(glium::glutin::dpi::LogicalSize::new(200, 200));
     let cb = glium::glutin::ContextBuilder::new();
     let display = Display::new(wb, cb, &event_loop)?;
 
     // 4. 把 rgb 数据做成纹理
     let image = glium::texture::RawImage2d {
         data: std::borrow::Cow::Borrowed(&rgb),
-        width: 1280,
-        height: 1000,
+        width: width as u32,
+        height: 100,
         format: glium::texture::ClientFormat::U8U8U8,
     };
     let texture = glium::texture::Texture2d::new(&display, image)?;
