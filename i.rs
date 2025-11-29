@@ -11,11 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // 提取 "db " 之后的内容
-        let after_db = if let Some(stripped) = line.strip_prefix("db ") {
-            stripped
-        } else {
-            continue; // 如果没有 "db " 前缀则跳过
-        };
+        let after_db = line.split("db ").nth(1).unwrap_or("");
 
         // 按逗号分割
         for item in after_db.split(',') {
