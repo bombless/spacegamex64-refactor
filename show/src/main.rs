@@ -136,9 +136,9 @@ impl TileMap {
             let r = self.raw[pixel_offset + 2];
             let a = self.raw[pixel_offset + 3];
             
-            if a == 0 {
-                return Some((0, 0, 0)); // 透明像素显示黑色背景
-            }
+            // if a == 0 {
+            //     return Some((0, 0, 0)); // 透明像素显示黑色背景
+            // }
             
             Some((r, g, b))
         } else {
