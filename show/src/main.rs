@@ -33,11 +33,45 @@ fn get_image(n: usize, data: &[u8]) -> Vec<u8> {
     img
 }
 
+struct TileMap {
+    raw: Vec<u8>,
+    map: Vec<usize>,
+}
+
+impl TileMap {
+    fn new() -> Self {
+        let raw = source("../graphics/bgTiles.inc");
+        let map_source = source("../graphics/tilemap.inc");
+        let mut map = Vec::new();
+        for i in 0 .. map_source.len() / 2 {
+            let lo = map_source[i * 2] as usize;
+            let hi = map_source[i * 2 + 1] as usize;
+            let n = lo + (hi << 8);
+            map.push(n);
+        }
+        Self {
+            raw,
+            map,
+        }
+    }
+
+    fn get_color(&self, x: usize, y: usize) -> (u8, u8, u8) {
+        let tile_idx = x / (256 / 8) + y / (256 / 8) * (256 / 8);
+        let tile_idx = self.map[tile_idx];
+        // println!("tile idx: {}", tile_idx);
+        let offset = tile_idx * 4 * 8 * 8;
+        let i = y % 8;
+        let j = 7 - x % 8;
+        let buffer = &self.raw[offset + (i * 8 + j) * 4..];
+        (buffer[2], buffer[1], buffer[0])
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. 解析成 Vec<u8>
     let tiles = source("../graphics/spriteTiles.inc");
     let tiles2 = source("../graphics/spriteTiles2.inc");
-    let bg_tiles = source("../graphics/bgTiles.inc");
+    let bg_tiles = TileMap::new();
 
     // 2. 取 rgb 数据
     let mut rgb = Vec::<u8>::new();
@@ -46,24 +80,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let is_extra_space = y < 32 * 8;
         let y = 32 * 8 - 1 - y % (32 * 8);
         for x in 0 .. 32 * 8 * 2 {
-            if x < 32 * 8 && is_extra_space {
-                rgb.extend(&[0, 0, 0]);
+            if is_extra_space {
+                if x >= 32 * 8 {
+                    rgb.extend(&[0, 0, 0]);
+                    continue;                    
+                }
+                let color = bg_tiles.get_color(x, y);
+                rgb.extend(&[color.0, color.1, color.2]);
                 continue;
             }
-            // if is_extra_space && (x % 32 >= 8 || y % 32 >= 8) {
-            //     rgb.extend(&[0, 0, 0]);
-            //     continue;
-            // }
-            let tiles = if x < 32 * 8 && y < 32 * 8 { &tiles } else if !is_extra_space { &tiles2 } else { &bg_tiles };
+            let tiles = if x < 32 * 8 { &tiles } else { &tiles2 };
             let i = x % (32 * 8) / 32;
             let j = y % (32 * 8) / 32;
             let n = i * 8 + j;
             let data = get_image(n, tiles);
-            let offset = if is_extra_space {
-                y % 32 * 32 / 4 * 3 + x  % 32 / 4 * 3
-            } else {
-                y % 32 * 32 * 3 + x  % 32 * 3
-            };
+            let offset = y % 32 * 32 * 3 + x  % 32 * 3;
             rgb.extend(&[data[offset], data[offset + 1], data[offset + 2]]);
         }
     }
