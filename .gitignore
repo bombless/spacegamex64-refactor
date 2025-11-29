@@ -3,3 +3,5 @@ target/
 /esp
 /DEBUGX64_OVMF.fd
 /*.efi
+/i
+/*.ppm
