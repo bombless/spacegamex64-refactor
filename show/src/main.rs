@@ -1,13 +1,11 @@
 use glium::{Display, Surface, uniform};
 use std::fs;
 
-fn source() -> Vec<u8> {
-    let content = fs::read_to_string("../graphics/spriteTiles.inc").unwrap();
+fn source(path: &str) -> Vec<u8> {
+    let content = fs::read_to_string(path).unwrap();
     let mut result = Vec::new();
-    let mut limit = 100_000000;
 
     for line in content.lines() {
-        if limit == 0 { break; }
         let after_db = line.split("db ").nth(1).unwrap_or("");
         for item in after_db.split(',') {
             let trimmed = item.trim();
@@ -19,9 +17,7 @@ fn source() -> Vec<u8> {
                 }
             }
         }
-        limit -= 1;
     }
-    println!("{}", result.len());
     result
 }
 
@@ -38,20 +34,22 @@ fn get_image(n: usize, data: &[u8]) -> Vec<u8> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. 把 loadImg.inc 解析成 Vec<u8>
-    let result = source();
+    // 1. 解析成 Vec<u8>
+    let tiles = source("../graphics/spriteTiles.inc");
+    let tiles2 = source("../graphics/spriteTiles2.inc");
 
     // 2. 取 rgb 数据
     let mut rgb = Vec::<u8>::new();
 
-    for x in 0 .. 32 * 8 {
-        let x = 32 * 8 - 1 - x;
-        for y in 0 .. 32 * 8 {
-            let i = x / 32;
+    for y in 0 .. 32 * 8 {
+        let y = 32 * 8 - 1 - y;
+        for x in 0 .. 32 * 8 * 2 {
+            let tiles = if x < 32 * 8 { &tiles } else { &tiles2 };
+            let i = x % (32 * 8) / 32;
             let j = y / 32;
             let n = i * 8 + j;
-            let data = get_image(n, &result);
-            let offset = x % 32 * 32 * 3 + y % 32 * 3;
+            let data = get_image(n, tiles);
+            let offset = y % 32 * 32 * 3 + x % (32 * 8) % 32 * 3;
             rgb.extend(&[data[offset], data[offset + 1], data[offset + 2]]);
         }
     }
@@ -61,14 +59,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = glium::glutin::event_loop::EventLoop::new();
     let wb = glium::glutin::window::WindowBuilder::new()
                 .with_title("inc 图片")
-                .with_inner_size(glium::glutin::dpi::LogicalSize::new(512, 512));
+                .with_inner_size(glium::glutin::dpi::LogicalSize::new(512, 256));
     let cb = glium::glutin::ContextBuilder::new();
     let display = Display::new(wb, cb, &event_loop)?;
 
     // 4. 把 rgb 数据做成纹理
     let image = glium::texture::RawImage2d {
         data: std::borrow::Cow::Borrowed(&rgb),
-        width: 32 * 8,
+        width: 32 * 8 * 2,
         height: 32 * 8,
         format: glium::texture::ClientFormat::U8U8U8,
     };
