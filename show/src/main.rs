@@ -36,34 +36,61 @@ fn get_image(n: usize, data: &[u8]) -> Vec<u8> {
 struct TileMap {
     raw: Vec<u8>,
     map: Vec<usize>,
+    map_width: usize,   // 地图宽度（tile 数）
+    map_height: usize,  // 地图高度（tile 数）
+    tile_size: usize,   // 每个 tile 的像素大小
 }
 
 impl TileMap {
     fn new() -> Self {
         let raw = source("../graphics/bgTiles.inc");
         let map_source = source("../graphics/tilemap.inc");
+        
         let mut map = Vec::new();
-        for i in 0 .. map_source.len() / 2 {
+        for i in 0..map_source.len() / 2 {
             let lo = map_source[i * 2] as usize;
             let hi = map_source[i * 2 + 1] as usize;
             let n = lo + (hi << 8);
             map.push(n);
         }
+        
+        // 根据汇编：15 列 × 20 行
         Self {
             raw,
             map,
+            map_width: 15,
+            map_height: 20,
+            tile_size: 8,  // 假设 8×8 像素
         }
     }
 
-    fn get_color(&self, x: usize, y: usize) -> (u8, u8, u8) {
-        let tile_idx = x / (256 / 8) + y / (256 / 8) * (256 / 8);
-        let tile_idx = self.map[tile_idx];
-        // println!("tile idx: {}", tile_idx);
-        let offset = tile_idx * 4 * 8 * 8;
-        let i = y % 8;
-        let j = 7 - x % 8;
-        let buffer = &self.raw[offset + (i * 8 + j) * 4..];
-        (buffer[2], buffer[1], buffer[0])
+    fn get_color(&self, x: usize, y: usize) -> Option<(u8, u8, u8)> {
+        let tile_x = x / self.tile_size;
+        let tile_y = y / self.tile_size;
+        
+        // 边界检查
+        if tile_x >= self.map_width || tile_y >= self.map_height {
+            return None;
+        }
+        
+        // 计算 tile 索引（行优先）
+        let tile_idx = tile_y * self.map_width + tile_x;
+        let tile_id = self.map[tile_idx];
+        
+        // tile 数据偏移（每个 tile = 8×8 像素 × 4 字节）
+        let bytes_per_tile = self.tile_size * self.tile_size * 4;
+        let offset = tile_id * bytes_per_tile;
+        
+        // tile 内的像素位置
+        let px = x % self.tile_size;
+        let py = y % self.tile_size;
+        
+        // 像素在 tile 内的偏移
+        // 注意：你原来用 7-x%8，这是水平翻转，需要确认是否需要
+        let pixel_offset = (py * self.tile_size + px) * 4;
+        
+        let buffer = &self.raw[offset + pixel_offset..];
+        Some((buffer[2], buffer[1], buffer[0]))  // BGR -> RGB
     }
 }
 
@@ -85,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rgb.extend(&[0, 0, 0]);
                     continue;                    
                 }
-                let color = bg_tiles.get_color(x, y);
+                let color = bg_tiles.get_color(x, y).unwrap_or((0, 0, 0));
                 rgb.extend(&[color.0, color.1, color.2]);
                 continue;
             }
