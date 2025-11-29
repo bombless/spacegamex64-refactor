@@ -41,93 +41,170 @@ fn get_image(n: usize, data: &[u8]) -> Vec<u8> {
 }
 
 struct TileMap {
-    raw: Vec<u8>,
-    map: Vec<usize>,
-    map_width: usize,   // 地图宽度（tile 数）
-    map_height: usize,  // 地图高度（tile 数）
-    tile_size: usize,   // 每个 tile 的像素大小
+    raw: Vec<u8>,           // tile 图形数据 (bgTiles)
+    map: Vec<u16>,          // 完整地图数据（只读源）
+    vram: Vec<u16>,         // TILEMAP0 的模拟（32x32 工作区）
+    tile_size: usize,       // 每个 tile 的像素大小 = 8
+    
+    // 滚动状态
+    game_map_offset: usize, // GAMEMAPOFFSET（以 tile 为单位）
+    scroll_x: usize,        // 像素级 X 滚动 (0-15)
+    scroll_y: usize,        // 像素级 Y 滚动 (0-7)
+    scroll_timer: usize,
 }
 
 impl TileMap {
+    const VRAM_WIDTH: usize = 32;
+    const VRAM_HEIGHT: usize = 32;
+    const VIEW_WIDTH: usize = 15;   // 可视区域宽度（tile）
+    const VIEW_HEIGHT: usize = 20;  // 可视区域高度（tile）
+    const INITIAL_OFFSET: usize = 0x258 / 2; // 300 tiles
+    
     fn new() -> Self {
         let raw = source("../graphics/bgTiles.inc");
         let map_source = source("../graphics/tilemap.inc");
         
+        // 解析 tilemap：每 2 字节一个 tile 索引
         let mut map = Vec::new();
         for i in 0..map_source.len() / 2 {
-            let lo = map_source[i * 2] as usize;
-            let hi = map_source[i * 2 + 1] as usize;
-            let n = lo + (hi << 8);
-            map.push(n);
+            let lo = map_source[i * 2] as u16;
+            let hi = map_source[i * 2 + 1] as u16;
+            map.push(lo | (hi << 8));
         }
         
-        Self {
+        // 初始化 VRAM (32x32)，全部清零
+        let vram = vec![0u16; Self::VRAM_WIDTH * Self::VRAM_HEIGHT];
+        
+        let mut tilemap = Self {
             raw,
             map,
-            map_width: 15,
-            map_height: 20,
+            vram,
             tile_size: 8,
+            game_map_offset: Self::INITIAL_OFFSET,
+            scroll_x: 0,
+            scroll_y: 0,
+            scroll_timer: 0,
+        };
+        
+        tilemap.graphics_init();
+        tilemap
+    }
+    
+    /// 模拟 GRAPHICSINIT 宏
+    fn graphics_init(&mut self) {
+        // 从 tilemap 开头读取 15x20 tiles
+        // 写入 TILEMAP0 的偏移 0x5E（47 tiles）位置
+        // 47 = 1 * 32 + 15，即 (列15, 行1)
+        
+        let mut src_idx = 0;
+        let vram_start_x = 15;  // 0x5E / 2 % 32 = 47 % 32 = 15
+        let vram_start_y = 1;   // 0x5E / 2 / 32 = 47 / 32 = 1
+        
+        for row in 0..Self::VIEW_HEIGHT {
+            for col in 0..Self::VIEW_WIDTH {
+                if src_idx < self.map.len() {
+                    let vram_x = vram_start_x + col;
+                    let vram_y = vram_start_y + row;
+                    
+                    // VRAM 是环形的（wrap around）
+                    let vram_idx = (vram_y % Self::VRAM_HEIGHT) * Self::VRAM_WIDTH 
+                                 + (vram_x % Self::VRAM_WIDTH);
+                    
+                    self.vram[vram_idx] = self.map[src_idx];
+                    src_idx += 1;
+                }
+            }
+            // 每行结束后，ADD RBX, 022H 跳过 17 个 tile
+            // 但源指针继续顺序读取，所以这里不需要额外操作
         }
     }
-}
-impl TileMap {
+    
+    /// 从 tile 索引和像素位置获取颜色
+    fn get_tile_pixel(&self, tile_index: u16, px: usize, py: usize) -> Option<(u8, u8, u8)> {
+        if tile_index == 0 {
+            return Some((0, 0, 0)); // 空 tile 显示黑色
+        }
+        
+        // 每个 tile 是 8x8 像素，每像素 4 字节 (BGRA)
+        let tile_data_size = 8 * 8 * 4; // 256 bytes per tile
+        let tile_offset = (tile_index as usize) * tile_data_size;
+        let pixel_offset = tile_offset + (py * 8 + px) * 4;
+        
+        if pixel_offset + 3 < self.raw.len() {
+            let b = self.raw[pixel_offset];
+            let g = self.raw[pixel_offset + 1];
+            let r = self.raw[pixel_offset + 2];
+            let a = self.raw[pixel_offset + 3];
+            
+            if a == 0 {
+                return Some((0, 0, 0)); // 透明像素显示黑色背景
+            }
+            
+            Some((r, g, b))
+        } else {
+            Some((255, 0, 255)) // 越界显示品红色（调试用）
+        }
+    }
+    
+    /// 获取指定帧、指定像素位置的颜色
+    /// x: 0..119 (15 tiles * 8 pixels)
+    /// y: 0..159 (20 tiles * 8 pixels)
     fn get_color(&self, frame: usize, x: usize, y: usize) -> Option<(u8, u8, u8)> {
-        let tile_size = self.tile_size;
+        // 计算当前帧的滚动偏移
+        // 根据汇编：scroll_x 每帧+1，scroll_y 每2帧+1
+        let scroll_x = (frame % 16) as isize;
+        let scroll_y = ((frame / 2) % 8) as isize;
         
-        // ========================================
-        // 根据汇编逻辑计算滚动偏移
-        // ========================================
-        // INC SCROLLX              ; 每帧 +1
-        // TEST RAX, 01H
-        // JNZ JUSTXSCROLL
-        // INC SCROLLY              ; 偶数帧才 +1（每2帧+1）
+        // 应用滚动偏移（地图向左上滚动 = 视角向右下移动）
+        // TM0XOFFSET = 256 - SCROLLX（反向）
+        let adjusted_x = x as isize + (16 - scroll_x);
+        let adjusted_y = y as isize - scroll_y;
         
-        let total_scroll_x = frame;           // X: 每帧滚动1像素
-        let total_scroll_y = frame / 2;       // Y: 每2帧滚动1像素
-        
-        // ========================================
-        // 计算地图坐标（屏幕坐标 + 滚动偏移）
-        // ========================================
-        // 屏幕向左上滚动 = 地图坐标向右下移动
-        let map_x = x + total_scroll_x;
-        let map_y = y + total_scroll_y;
-        
-        // ========================================
-        // 转换为 tile 坐标
-        // ========================================
-        let tile_x = map_x / tile_size;
-        let tile_y = map_y / tile_size;
-        
-        // 边界检查
-        if tile_x >= self.map_width || tile_y >= self.map_height {
-            return None;
+        if adjusted_x < 0 || adjusted_y < 0 {
+            return Some((0, 0, 0));
         }
         
-        // 计算 tile 索引（行优先）
-        let tile_idx = tile_y * self.map_width + tile_x;
-        if tile_idx >= self.map.len() {
-            return None;
+        let adjusted_x = adjusted_x as usize;
+        let adjusted_y = adjusted_y as usize;
+        
+        // 计算在 VRAM 中的 tile 坐标
+        let tile_x = adjusted_x / self.tile_size;
+        let tile_y = adjusted_y / self.tile_size;
+        
+        // tile 内的像素坐标
+        let px = adjusted_x % self.tile_size;
+        let py = adjusted_y % self.tile_size;
+        
+        // 映射到 VRAM 位置（考虑初始偏移）
+        let vram_x = (tile_x + 15) % Self::VRAM_WIDTH;  // +15 因为数据从列15开始
+        let vram_y = (tile_y + 1) % Self::VRAM_HEIGHT;  // +1 因为数据从行1开始
+        
+        let vram_idx = vram_y * Self::VRAM_WIDTH + vram_x;
+        let tile_index = self.vram.get(vram_idx).copied().unwrap_or(0);
+        
+        self.get_tile_pixel(tile_index, px, py)
+    }
+    
+    /// 简化版：只获取第一帧，不考虑滚动
+    fn get_color_frame0(&self, x: usize, y: usize) -> Option<(u8, u8, u8)> {
+        // 屏幕坐标 (x, y) 直接映射到 VRAM
+        let tile_x = x / self.tile_size;
+        let tile_y = y / self.tile_size;
+        let px = x % self.tile_size;
+        let py = y % self.tile_size;
+        
+        // VRAM 中的位置
+        let vram_x = tile_x + 15;  // 初始 X 偏移
+        let vram_y = tile_y + 1;   // 初始 Y 偏移
+        
+        if vram_x >= Self::VRAM_WIDTH || vram_y >= Self::VRAM_HEIGHT {
+            return Some((0, 0, 0));
         }
-        let tile_id = self.map[tile_idx];
         
-        // ========================================
-        // 计算 tile 内像素位置
-        // ========================================
-        let px = map_x % tile_size;
-        let py = map_y % tile_size;
+        let vram_idx = vram_y * Self::VRAM_WIDTH + vram_x;
+        let tile_index = self.vram.get(vram_idx).copied().unwrap_or(0);
         
-        // tile 数据偏移（每个 tile = tile_size × tile_size × 4 字节）
-        let bytes_per_tile = tile_size * tile_size * 4;
-        let offset = tile_id * bytes_per_tile;
-        let pixel_offset = (py * tile_size + px) * 4;
-        
-        let total_offset = offset + pixel_offset;
-        if total_offset + 2 >= self.raw.len() {
-            return None;
-        }
-        
-        let buffer = &self.raw[total_offset..];
-        Some((buffer[2], buffer[1], buffer[0]))  // BGR -> RGB
+        self.get_tile_pixel(tile_index, px, py)
     }
 }
 
@@ -143,11 +220,12 @@ fn texture(index: usize, display: &Display<WindowSurface>) -> glium::texture::Te
         let y = 32 * 8 - 1 - y % (32 * 8);
         for x in 0 .. 32 * 8 * 2 {
             if is_extra_space {
-                if x >= 120 {
-                    rgb.extend(&[0, 0, 0]);
+                if x >= 120 || y >= 160 {
+                    rgb.extend(&[255, 255, 255]);
                     continue;
                 }
-                let color = bg_tiles.get_color(index, x % 120, y).unwrap_or((0, 0, 0));
+                // println!("x {x}, y {y}");
+                let color = bg_tiles.get_color(index, x, y).unwrap_or((255, 0, 255));
                 rgb.extend(&[color.0, color.1, color.2]);
                 continue;
             }
