@@ -1,5 +1,11 @@
 use glium::{Display, Surface, uniform};
 use std::fs;
+use glium::backend::glutin::SimpleWindowBuilder;
+use winit::application::ApplicationHandler;
+use glutin::surface::WindowSurface;
+use winit::window::WindowId;
+use winit::event_loop::{ActiveEventLoop};
+use winit::event::WindowEvent;
 
 fn source(path: &str) -> Vec<u8> {
     let content = fs::read_to_string(path).unwrap();
@@ -128,12 +134,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     // 3. 创建窗口
-    let event_loop = glium::glutin::event_loop::EventLoop::new();
-    let wb = glium::glutin::window::WindowBuilder::new()
-                .with_title("inc 图片")
-                .with_inner_size(glium::glutin::dpi::LogicalSize::new(512, 512));
-    let cb = glium::glutin::ContextBuilder::new();
-    let display = Display::new(wb, cb, &event_loop)?;
+    let event_loop = winit::event_loop::EventLoop::new().unwrap();
+    let (_window, display) = SimpleWindowBuilder::new().build(&event_loop);
 
     // 4. 把 rgb 数据做成纹理
     let image = glium::texture::RawImage2d {
@@ -176,24 +178,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     // 6. 主循环
-    use glium::glutin::event::{Event, WindowEvent};
-    use glium::glutin::event_loop::ControlFlow;
 
-    event_loop.run(move |ev, _, cf| {
-        *cf = ControlFlow::Wait;
+    let app = &mut App {
+        display,
+        vertex_buffer,
+        indices,
+        program,
+        texture,
+    };
 
-        if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = ev {
-            *cf = ControlFlow::Exit;
-            return;
+    event_loop.run_app(app)?;
+    Ok(())
+}
+
+struct App {
+    display: Display<WindowSurface>,
+    vertex_buffer: glium::VertexBuffer<Vertex>,
+    indices: glium::index::NoIndices,
+    program: glium::Program,
+    texture: glium::texture::Texture2d,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
+        
+    }
+
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested => {
+                println!("The close button was pressed; stopping");
+                event_loop.exit();
+            },
+            WindowEvent::RedrawRequested => {
+                let mut frame = self.display.draw();
+                frame.clear_color(0.1, 0.1, 0.1, 1.0);
+                frame.draw(&self.vertex_buffer, &self.indices, &self.program,
+                        &uniform!{ tex: &self.texture },
+                        &Default::default()).unwrap();
+                frame.finish().unwrap();
+                // self.window.request_redraw();
+            }
+            _ => (),
         }
-
-        let mut frame = display.draw();
-        frame.clear_color(0.1, 0.1, 0.1, 1.0);
-        frame.draw(&vertex_buffer, &indices, &program,
-                   &uniform!{ tex: &texture },
-                   &Default::default()).unwrap();
-        frame.finish().unwrap();
-    });
+    }
 }
 
 #[derive(Copy, Clone)]
