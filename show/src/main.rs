@@ -37,19 +37,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. 解析成 Vec<u8>
     let tiles = source("../graphics/spriteTiles.inc");
     let tiles2 = source("../graphics/spriteTiles2.inc");
+    let bg_tiles = source("../graphics/bgTiles.inc");
 
     // 2. 取 rgb 数据
     let mut rgb = Vec::<u8>::new();
 
-    for y in 0 .. 32 * 8 {
-        let y = 32 * 8 - 1 - y;
+    for y in 0 .. 32 * 8 * 2 {
+        let is_extra_space = y < 32 * 8;
+        let y = 32 * 8 - 1 - y % (32 * 8);
         for x in 0 .. 32 * 8 * 2 {
-            let tiles = if x < 32 * 8 { &tiles } else { &tiles2 };
+            if x < 32 * 8 && is_extra_space {
+                rgb.extend(&[0, 0, 0]);
+                continue;
+            }
+            // if is_extra_space && (x % 32 >= 8 || y % 32 >= 8) {
+            //     rgb.extend(&[0, 0, 0]);
+            //     continue;
+            // }
+            let tiles = if x < 32 * 8 && y < 32 * 8 { &tiles } else if !is_extra_space { &tiles2 } else { &bg_tiles };
             let i = x % (32 * 8) / 32;
-            let j = y / 32;
+            let j = y % (32 * 8) / 32;
             let n = i * 8 + j;
             let data = get_image(n, tiles);
-            let offset = y % 32 * 32 * 3 + x % (32 * 8) % 32 * 3;
+            let offset = if is_extra_space {
+                y % 32 * 32 / 4 * 3 + x  % 32 / 4 * 3
+            } else {
+                y % 32 * 32 * 3 + x  % 32 * 3
+            };
             rgb.extend(&[data[offset], data[offset + 1], data[offset + 2]]);
         }
     }
@@ -59,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = glium::glutin::event_loop::EventLoop::new();
     let wb = glium::glutin::window::WindowBuilder::new()
                 .with_title("inc 图片")
-                .with_inner_size(glium::glutin::dpi::LogicalSize::new(512, 256));
+                .with_inner_size(glium::glutin::dpi::LogicalSize::new(512, 512));
     let cb = glium::glutin::ContextBuilder::new();
     let display = Display::new(wb, cb, &event_loop)?;
 
@@ -67,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let image = glium::texture::RawImage2d {
         data: std::borrow::Cow::Borrowed(&rgb),
         width: 32 * 8 * 2,
-        height: 32 * 8,
+        height: 32 * 8 * 2,
         format: glium::texture::ClientFormat::U8U8U8,
     };
     let texture = glium::texture::Texture2d::new(&display, image)?;
