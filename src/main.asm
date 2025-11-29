@@ -9,6 +9,7 @@ INCLUDE .\include\macros_input.inc
 INCLUDE .\include\macros_graphics.inc
 INCLUDE .\include\macros_game.inc
 INCLUDE .\include\macros_game_ui.inc
+INCLUDE .\include\macros_game_objects.inc
 
 .CODE
 
